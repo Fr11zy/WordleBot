@@ -1,0 +1,10 @@
+*.exe
+*.out
+*.bin
+
+vendor/
+pkg/
+*.test
+
+.vscode/
+.idea/
