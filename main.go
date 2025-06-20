@@ -50,8 +50,20 @@ func main() {
 	defer func() { _ = bh.Stop() }()
 
 	bh.Handle(handleSolve, th.CommandEqual("solve"))
+	bh.Handle(handleStart, th.CommandEqual("start"))
 	bh.Handle(handleFeedBack)
 	_ = bh.Start()
+}
+
+func handleStart(ctx *th.Context, update telego.Update) error {
+	chatID := update.Message.Chat.ID
+	ctx.Bot().SendMessage(ctx, tu.Message(
+		tu.ID(chatID),
+		"Привет, я твой помощник в решении ежедевных Wordle от New York Times, и не только.\n"+
+		"Я буду давать тебе новые слова, анализируя твой фидбэк от прошлого слова.\n"+
+		"Чтобы начать решение Wordle, используй команду /solve.",
+	))
+	return nil
 }
 
 func handleSolve(ctx *th.Context, update telego.Update) error {
@@ -73,7 +85,7 @@ func handleSolve(ctx *th.Context, update telego.Update) error {
 	ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
 		fmt.Sprintf("Начинаем Wordle! Мой первый вариант: **%s**\n\n"+
-			"Отправь мне подсказки в формате `GYBBG`:\n"+
+			"Отправляй мне фидбэк по моим вариантам в формате `GYBBG`:\n"+
 			"🟩 (G) — буква на месте\n"+
 			"🟨 (Y) — буква есть, но не тут\n"+
 			"⬛️ (B) — буквы нет в слове\n\n"+
