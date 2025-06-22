@@ -127,6 +127,28 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 		return nil
 	}
 
+	if feedback == "NOTFOUND" {
+		filtered := []string{}
+		for _,w := range game.PossibleWords {
+			if w != game.LastGuess {
+				filtered = append(filtered, w)
+			}
+		}
+		giveNextGuess(filtered, chatID, game, ctx)
+		return nil
+	}
+
+	if feedback == "LOSE" {
+		ctx.Bot().SendMessage(ctx, tu.Message(
+			tu.ID(chatID),
+			"Эх, проигрыш. Начни заново /solve, я покажу на что способен!",
+		))
+		gamesMu.Lock()
+		game.IsActive = false
+		gamesMu.Unlock()
+		return nil
+	}
+
 	if !isValidFeedBack(feedback) {
 		ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
@@ -136,13 +158,22 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 	}
 
 	filtered := filterWords(game.PossibleWords, game.LastGuess, feedback)
+	giveNextGuess(filtered, chatID, game, ctx)
+	return nil
+}
+
+func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Context) {
 	if len(filtered) == 0 {
 		ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
 			"Ошибка: нет подходящих слов. Начни заново /solve.",
 		))
-		return nil
+		gamesMu.Lock()
+		game.IsActive = false
+		gamesMu.Unlock()
+		return
 	}
+
 
 	nextGuess := chooseNext(filtered)
 
@@ -155,7 +186,6 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 		tu.ID(chatID),
 		fmt.Sprintf("Моя следующая догадка: **%s**", nextGuess),
 	))
-	return nil
 }
 
 func getOptimalFirstWord() string {
