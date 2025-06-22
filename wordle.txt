@@ -5922,7 +5922,6 @@ irids
 iring
 irked
 iroko
-irone
 irons
 irony
 isbas
@@ -8400,7 +8399,6 @@ nibby
 nicad
 niced
 nicer
-nicey
 niche
 nicht
 nicks
@@ -10722,9 +10720,7 @@ ringy
 rinks
 rinse
 rioja
-rione
 riots
-rioty
 riped
 ripen
 riper
@@ -11019,7 +11015,6 @@ rykes
 rymer
 rymme
 rynds
-ryoti
 ryots
 ryper
 rypin
