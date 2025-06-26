@@ -51,6 +51,7 @@ func main() {
 
 	bh.Handle(handleSolve, th.CommandEqual("solve"))
 	bh.Handle(handleStart, th.CommandEqual("start"))
+	bh.Handle(handleHelp, th.CommandEqual("help"))
 	bh.Handle(handleFeedBack)
 	_ = bh.Start()
 }
@@ -63,6 +64,10 @@ func handleStart(ctx *th.Context, update telego.Update) error {
 		"Я буду давать тебе новые слова, анализируя твой фидбэк от прошлого слова.\n"+
 		"Чтобы начать решение Wordle, используй команду /solve.",
 	))
+	return nil
+}
+
+func handleHelp(ctx *th.Context, update telego.Update) error {
 	return nil
 }
 
@@ -101,7 +106,6 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 	}
 
 	chatID := update.Message.Chat.ID
-
 	gamesMu.RLock()
 	game, exists := userGames[chatID]
 	gamesMu.RUnlock()
@@ -116,18 +120,9 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 
 	feedback := strings.ToUpper(update.Message.Text)
 
-	if feedback == "GUESS" {
-		ctx.Bot().SendMessage(ctx, tu.Message(
-			tu.ID(chatID),
-			"🎉 Ура! Я молодец. Используй /solve для новой игры.",
-		))
-		gamesMu.Lock()
-		game.IsActive = false
-		gamesMu.Unlock()
-		return nil
-	}
-
-	if feedback == "NOTFOUND" {
+	switch feedback {
+	case "NOTFOUND":
+		{
 		filtered := []string{}
 		for _,w := range game.PossibleWords {
 			if w != game.LastGuess {
@@ -136,17 +131,27 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 		}
 		giveNextGuess(filtered, chatID, game, ctx)
 		return nil
-	}
-
-	if feedback == "LOSE" {
+		}
+	case "LOSE":
+		{
 		ctx.Bot().SendMessage(ctx, tu.Message(
-			tu.ID(chatID),
-			"Эх, проигрыш. Начни заново /solve, я покажу на что способен!",
-		))
+		tu.ID(chatID),
+		"Эх, проигрыш. Начни заново /solve, я покажу на что способен!",))
 		gamesMu.Lock()
 		game.IsActive = false
 		gamesMu.Unlock()
 		return nil
+		}
+	case "GUESS":
+		{
+		ctx.Bot().SendMessage(ctx, tu.Message(
+		tu.ID(chatID),
+		"🎉 Ура! Я молодец. Используй /solve для новой игры.",))
+		gamesMu.Lock()
+		game.IsActive = false
+		gamesMu.Unlock()
+		return nil
+		}
 	}
 
 	if !isValidFeedBack(feedback) {
