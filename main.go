@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/mymmrac/telego"
 	th "github.com/mymmrac/telego/telegohandler"
@@ -34,7 +33,6 @@ var optimalFirstWords = []string{
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
 
 	ctx := context.Background()
 	os.Setenv("TOKEN", "7549155657:AAHw170x4VCtmlamgso7h-YoW6tDQt6GW_Q")
@@ -60,14 +58,23 @@ func handleStart(ctx *th.Context, update telego.Update) error {
 	chatID := update.Message.Chat.ID
 	ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
-		"Привет, я твой помощник в решении ежедевных Wordle от New York Times, и не только.\n"+
+		fmt.Sprint("Привет, я твой помощник в решении ежедевных Wordle от New York Times, и не только.\n"+
 		"Я буду давать тебе новые слова, анализируя твой фидбэк от прошлого слова.\n"+
-		"Чтобы начать решение Wordle, используй команду /solve.",
+		"Чтобы начать решение Wordle, используй команду /solve.\n"+
+		"Также ты можешь попросить у меня подсказку, если при самостоятельном решении Wordle где-то застрял - используй команду /help."),
 	))
 	return nil
 }
 
 func handleHelp(ctx *th.Context, update telego.Update) error {
+	chatID := update.Message.Chat.ID
+	ctx.Bot().SendMessage(ctx, tu.Message(
+		tu.ID(chatID),
+		fmt.Sprint("Тебе нужна подсказка? - Отлично. Отправь мне все известные слова и их статусы в формате: `TRAIN`-`bygbb` (каждая пара в отдельной строчке):\n"+
+		"🟩 (G) — буква на месте\n"+
+		"🟨 (Y) — буква есть, но не тут\n"+
+		"⬛️ (B) — буквы нет в слове\n\n"),
+	))
 	return nil
 }
 
