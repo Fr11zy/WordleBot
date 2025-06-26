@@ -123,13 +123,10 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 	switch feedback {
 	case "NOTFOUND":
 		{
-		filtered := []string{}
-		for _,w := range game.PossibleWords {
-			if w != game.LastGuess {
-				filtered = append(filtered, w)
-			}
-		}
-		giveNextGuess(filtered, chatID, game, ctx)
+		gamesMu.Lock()
+		game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
+		gamesMu.Unlock()
+		giveNextGuess(game.PossibleWords, chatID, game, ctx)
 		return nil
 		}
 	case "LOSE":
@@ -207,6 +204,16 @@ func isValidFeedBack(feedback string) bool {
 		}
 	}
 	return true
+}
+
+func filteredOut(words []string, exclude string) []string {
+	filtered := []string{}
+	for _,w := range words {
+		if w != exclude {
+			filtered = append(filtered, w)
+		}
+	}
+	return filtered
 }
 
 func filterWords(words []string, guess, feedback string) []string {
