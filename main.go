@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
+	"github.com/joho/godotenv"
 
 	"github.com/mymmrac/telego"
 	th "github.com/mymmrac/telego/telegohandler"
@@ -33,9 +35,10 @@ var optimalFirstWords = []string{
 }
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 
 	ctx := context.Background()
-	os.Setenv("TOKEN", "7549155657:AAHw170x4VCtmlamgso7h-YoW6tDQt6GW_Q")
+	_ = godotenv.Load()
 	botToken := os.Getenv("TOKEN")
 
 	bot, err := telego.NewBot(botToken, telego.WithDefaultDebugLogger())
@@ -51,10 +54,12 @@ func main() {
 	bh.Handle(handleStart, th.CommandEqual("start"))
 	bh.Handle(handleHelp, th.CommandEqual("help"))
 	bh.Handle(handleFeedBack)
+	
 	_ = bh.Start()
 }
 
 func handleStart(ctx *th.Context, update telego.Update) error {
+	log.Println("handleStart called")
 	chatID := update.Message.Chat.ID
 	ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
