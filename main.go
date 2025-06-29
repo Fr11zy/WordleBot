@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/joho/godotenv"
 
 	"github.com/mymmrac/telego"
@@ -21,6 +22,7 @@ type WordleGame struct {
 	PossibleWords []string
 	LastGuess     string
 	IsActive      bool
+	Mode 		  string
 }
 
 var (
@@ -73,9 +75,16 @@ func handleStart(ctx *th.Context, update telego.Update) error {
 
 func handleHelp(ctx *th.Context, update telego.Update) error {
 	chatID := update.Message.Chat.ID
+	gamesMu.Lock()
+	userGames[chatID] = &WordleGame{
+		PossibleWords: wordlist,
+		IsActive:      true,
+		Mode:		   "HELP",
+	}
+	gamesMu.Unlock()
 	ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
-		fmt.Sprint("Тебе нужна подсказка? - Отлично. Отправь мне все известные слова и их статусы в формате: `TRAIN`-`bygbb` (каждая пара в отдельной строчке):\n"+
+		fmt.Sprint("Тебе нужна подсказка? - Отлично. Отправь мне все известные слова и их статусы через пробел: `TRAIN` `bygbb` (каждая пара в отдельной строчке):\n"+
 		"🟩 (G) — буква на месте\n"+
 		"🟨 (Y) — буква есть, но не тут\n"+
 		"⬛️ (B) — буквы нет в слове\n\n"),
@@ -90,6 +99,7 @@ func handleSolve(ctx *th.Context, update telego.Update) error {
 	userGames[chatID] = &WordleGame{
 		PossibleWords: wordlist,
 		IsActive:      true,
+		Mode:		   "SOLVE",
 	}
 	gamesMu.Unlock()
 
@@ -106,7 +116,9 @@ func handleSolve(ctx *th.Context, update telego.Update) error {
 			"🟩 (G) — буква на месте\n"+
 			"🟨 (Y) — буква есть, но не тут\n"+
 			"⬛️ (B) — буквы нет в слове\n\n"+
-			"Если слово угадано, напиши `Guess`.",
+			"Если слово угадано, напиши `Guess`.\n"+
+			"Если слово не подходит, напиши `Notfound`.\n"+
+			"При проигрыше напиши `Lose`.",
 			firstGuess),
 	))
 	return nil
@@ -125,12 +137,120 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 	if !exists || !game.IsActive {
 		ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
-			"Игра не активна. Используй /solve для старта.",
+			"Игра не активна. Используй /solve или /help для старта.",
 		))
 		return nil
 	}
 
-	feedback := strings.ToUpper(update.Message.Text)
+	switch game.Mode {
+	case "SOLVE":
+		return handleSolveFeedBack(ctx, update, game)
+	case "HELP":
+		return handleHelpFeedBack(ctx, update, game)
+	case "CHILL": 
+		{
+		ctx.Bot().SendMessage(ctx, tu.Message(
+			tu.ID(chatID),
+			fmt.Sprint("На данный момент я в состоянии отдыха, потому что не выполняю никаких задач.\n"+
+			"Попробуй использовать команды start, solve или help."),
+		))
+		}
+	}
+
+	return nil
+}
+
+func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame) error {
+	chatID := update.Message.Chat.ID
+	input := strings.TrimSpace(strings.ToUpper(update.Message.Text))
+
+	if input == "GUESS" {
+		ctx.Bot().SendMessage(ctx, tu.Message(
+			tu.ID(chatID),
+			"Я рад, что смог тебе помочь решить wordle! Для новых подсказок используй /help.",
+		))
+
+		gamesMu.Lock()
+		delete(userGames, chatID)
+		game.IsActive = false
+		game.Mode = "CHILL"	
+		gamesMu.Unlock()
+	}
+
+	lines := strings.Split(input, "\n")
+
+	if len(lines) == 0 {
+		ctx.Bot().SendMessage(ctx, tu.Message(
+			tu.ID(chatID),
+			"Пожалуйста, отправь слова и их статусы в формате `TRAIN-bygbb`, по одному на строку.",
+		))
+		return nil
+	}
+	var validInputs [][]string
+	for _,line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, " ")
+		if len(parts) != 2 || len(parts[0]) != 5 || len(parts[1]) != 5 {
+			ctx.Bot().SendMessage(ctx, tu.Message(
+                tu.ID(chatID),
+                fmt.Sprintf("Неверный формат строки: `%s`. Используй формат `TRAIN bygbb`.", line),
+            ))
+            return nil
+		}
+		
+		word := parts[0]
+		feedback := parts[1]
+
+		if !isValidWord(word) || !isValidFeedBack(feedback) {
+			ctx.Bot().SendMessage(ctx, tu.Message(
+				tu.ID(chatID),
+				fmt.Sprintf("Неверное слово или фидбэк: `%s-%s`. Слово должно быть 5 букв, фидбэк — gybbg.", word, feedback),
+			))
+			return nil
+		}
+		validInputs = append(validInputs, []string{word, feedback})
+	}
+	
+	filtered := game.PossibleWords
+	for _, input := range validInputs {
+		word, feedback := input[0], input[1]
+		filtered = filterWords(filtered, word, feedback)
+	}
+
+	if len(filtered) == 0 {
+		ctx.Bot().SendMessage(ctx, tu.Message(
+			tu.ID(chatID),
+			"Ошибка: нет подходящих слов на основе твоего ввода. Проверь данные или начни заново с /help.",
+		))
+		gamesMu.Lock()
+		game.IsActive = false
+		game.Mode = "CHILL"
+		gamesMu.Unlock()
+		return nil
+	}
+
+	Guess := chooseNext(filtered)
+
+	gamesMu.Lock()
+	game.PossibleWords = filtered
+	game.LastGuess = Guess
+	gamesMu.Unlock()
+
+	ctx.Bot().SendMessage(ctx, tu.Message(
+        tu.ID(chatID),
+        fmt.Sprintf("Моя подсказка: **%s**\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или начни заново с /solve или /help.", Guess),
+    ))
+
+	return nil
+}
+
+func handleSolveFeedBack(ctx *th.Context, update telego.Update, game *WordleGame) error {
+	chatID := update.Message.Chat.ID
+
+	feedback := strings.TrimSpace(strings.ToUpper(update.Message.Text))
 
 	switch feedback {
 	case "NOTFOUND":
@@ -148,6 +268,8 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 		"Эх, проигрыш. Начни заново /solve, я покажу на что способен!",))
 		gamesMu.Lock()
 		game.IsActive = false
+		delete(userGames, chatID)
+		game.Mode = "CHILL"
 		gamesMu.Unlock()
 		return nil
 		}
@@ -158,6 +280,8 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 		"🎉 Ура! Я молодец. Используй /solve для новой игры.",))
 		gamesMu.Lock()
 		game.IsActive = false
+		delete(userGames, chatID)
+		game.Mode = "CHILL"
 		gamesMu.Unlock()
 		return nil
 		}
@@ -184,6 +308,7 @@ func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Co
 		))
 		gamesMu.Lock()
 		game.IsActive = false
+		game.Mode = "CHILL"
 		gamesMu.Unlock()
 		return
 	}
@@ -204,6 +329,18 @@ func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Co
 
 func getOptimalFirstWord() string {
 	return optimalFirstWords[rand.Intn(len(optimalFirstWords))]
+}
+
+func isValidWord(word string) bool {
+    if len(word) != 5 {
+        return false
+    }
+    for _, c := range word {
+        if !('A' <= c && c <= 'Z') {
+            return false
+        }
+    }
+    return true
 }
 
 func isValidFeedBack(feedback string) bool {
