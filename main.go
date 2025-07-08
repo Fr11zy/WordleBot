@@ -22,6 +22,7 @@ type WordleGame struct {
 	LastGuess     string
 	IsActive      bool
 	Mode 		  string
+	Attempts 	  int
 }
 
 var (
@@ -36,7 +37,7 @@ var optimalFirstWords = []string{
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
+    rand.Seed(time.Now().UnixNano())
 
 	ctx := context.Background()
 	_ = godotenv.Load()
@@ -79,6 +80,7 @@ func handleHelp(ctx *th.Context, update telego.Update) error {
 		PossibleWords: wordlist,
 		IsActive:      true,
 		Mode:		   "HELP",
+		Attempts: 	   0,	
 	}
 	gamesMu.Unlock()
 	ctx.Bot().SendMessage(ctx, tu.Message(
@@ -99,11 +101,12 @@ func handleSolve(ctx *th.Context, update telego.Update) error {
 		PossibleWords: wordlist,
 		IsActive:      true,
 		Mode:		   "SOLVE",
+		Attempts: 	   1,	
 	}
 	gamesMu.Unlock()
 
 	firstGuess := getOptimalFirstWord()
-
+	
 	gamesMu.Lock()
 	userGames[chatID].LastGuess = firstGuess
 	gamesMu.Unlock()
@@ -163,43 +166,16 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 	chatID := update.Message.Chat.ID
 	input := strings.TrimSpace(strings.ToUpper(update.Message.Text))
 
-	switch input {
-	case "NOTFOUND":
-		{
-		gamesMu.Lock()
-		game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
-		gamesMu.Unlock()
-		giveNextGuess(game.PossibleWords, chatID, game, ctx)
+	handled := handleSpecialFeedback(ctx, game, chatID, input)
+	if handled {
 		return nil
-		}
-	case "LOSE":
-		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-		tu.ID(chatID),
-		"Эх, проигрыш. Попробуй еще раз, я покажу на что способен!",))
-		gamesMu.Lock()
-		game.IsActive = false
-		delete(userGames, chatID)
-		game.Mode = "CHILL"
-		gamesMu.Unlock()
-		return nil
-		}
-	case "GUESS":
-		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-			tu.ID(chatID),
-			"Я рад, что смог тебе помочь решить wordle! Для новых подсказок используй /help.",
-		))
-		gamesMu.Lock()
-		delete(userGames, chatID)
-		game.IsActive = false
-		game.Mode = "CHILL"	
-		gamesMu.Unlock()
-		return nil
-		}
 	}
 
 	lines := strings.Split(input, "\n")
+	
+	gamesMu.Lock()
+	game.Attempts += len(lines)
+	gamesMu.Unlock()
 
 	if len(lines) == 0 {
 		ctx.Bot().SendMessage(ctx, tu.Message(
@@ -250,6 +226,8 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 		gamesMu.Lock()
 		game.IsActive = false
 		game.Mode = "CHILL"
+		game.Attempts = 0
+		delete(userGames, chatID)
 		gamesMu.Unlock()
 		return nil
 	}
@@ -261,9 +239,14 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 	game.LastGuess = Guess
 	gamesMu.Unlock()
 
+	gamesMu.RLock()
+	attempt := game.Attempts
+	gamesMu.RUnlock()
+
 	ctx.Bot().SendMessage(ctx, tu.Message(
         tu.ID(chatID),
-        fmt.Sprintf("Моя подсказка: **%s**\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", Guess),
+        fmt.Sprintf("Моя подсказка: **%s**(количество оставшихся попыток для победы: %d)\n\n"+
+		"Отправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", Guess, 5-attempt),
     ))
 
 	return nil
@@ -274,39 +257,9 @@ func handleSolveFeedBack(ctx *th.Context, update telego.Update, game *WordleGame
 
 	feedback := strings.TrimSpace(strings.ToUpper(update.Message.Text))
 
-	switch feedback {
-	case "NOTFOUND":
-		{
-		gamesMu.Lock()
-		game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
-		gamesMu.Unlock()
-		giveNextGuess(game.PossibleWords, chatID, game, ctx)
+	handled := handleSpecialFeedback(ctx, game, chatID, feedback)
+	if handled {
 		return nil
-		}
-	case "LOSE":
-		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-		tu.ID(chatID),
-		"Эх, проигрыш. Начни заново , я покажу на что способен!",))
-		gamesMu.Lock()
-		game.IsActive = false
-		delete(userGames, chatID)
-		game.Mode = "CHILL"
-		gamesMu.Unlock()
-		return nil
-		}
-	case "GUESS":
-		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-		tu.ID(chatID),
-		"🎉 Ура! Я молодец. Используй команды для новой игры.",))
-		gamesMu.Lock()
-		game.IsActive = false
-		delete(userGames, chatID)
-		game.Mode = "CHILL"
-		gamesMu.Unlock()
-		return nil
-		}
 	}
 
 	if !isValidFeedBack(feedback) {
@@ -331,6 +284,7 @@ func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Co
 		gamesMu.Lock()
 		game.IsActive = false
 		game.Mode = "CHILL"
+		game.Attempts = 0
 		gamesMu.Unlock()
 		return
 	}
@@ -341,9 +295,11 @@ func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Co
 	gamesMu.Lock()
 	game.PossibleWords = filtered
 	game.LastGuess = nextGuess
+	game.Attempts += 1
 	gamesMu.Unlock()
 	gamesMu.RLock()
 	mode := game.Mode
+	attempt := game.Attempts
 	gamesMu.RUnlock()
 
 	switch mode {
@@ -351,18 +307,60 @@ func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Co
 		{
 		ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
-		fmt.Sprintf("Моя следующая догадка: **%s**", nextGuess),
+		fmt.Sprintf("Моя %d-ая догадка: **%s**", attempt, nextGuess),
 	))
 	}
 	case "HELP":
 	{
 		ctx.Bot().SendMessage(ctx, tu.Message(
         tu.ID(chatID),
-        fmt.Sprintf("Моя подсказка: **%s**\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", nextGuess),
+        fmt.Sprintf("Моя подсказка: **%s**(количество оставшихся попыток для победы: %d)\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", nextGuess, 5-attempt),
     ))
 	}
 	}
 	
+}
+
+func handleSpecialFeedback(ctx *th.Context, game* WordleGame, chatID int64, feedback string) bool {
+	switch feedback {
+	case "NOTFOUND":
+		{
+		gamesMu.Lock()
+		game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
+		game.Attempts -= 1
+		gamesMu.Unlock()
+		giveNextGuess(game.PossibleWords, chatID, game, ctx)
+		return true
+		}
+	case "LOSE":
+		{
+		ctx.Bot().SendMessage(ctx, tu.Message(
+		tu.ID(chatID),
+		"Эх, проигрыш. Попробуй еще раз, я покажу на что способен!",))
+		gamesMu.Lock()
+		game.IsActive = false
+		game.Mode = "CHILL"
+		game.Attempts = 0
+		delete(userGames, chatID)
+		gamesMu.Unlock()
+		return true
+		}
+	case "GUESS":
+		{
+		ctx.Bot().SendMessage(ctx, tu.Message(
+			tu.ID(chatID),
+			"Я рад, что смог тебе помочь решить wordle!",
+		))
+		gamesMu.Lock()
+		game.IsActive = false
+		game.Mode = "CHILL"
+		game.Attempts = 0
+		delete(userGames, chatID)	
+		gamesMu.Unlock()
+		return true
+		}
+	}
+	return false
 }
 
 func getOptimalFirstWord() string {
