@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	"github.com/joho/godotenv"
 
 	"github.com/mymmrac/telego"
@@ -164,17 +163,40 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 	chatID := update.Message.Chat.ID
 	input := strings.TrimSpace(strings.ToUpper(update.Message.Text))
 
-	if input == "GUESS" {
+	switch input {
+	case "NOTFOUND":
+		{
+		gamesMu.Lock()
+		game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
+		gamesMu.Unlock()
+		giveNextGuess(game.PossibleWords, chatID, game, ctx)
+		return nil
+		}
+	case "LOSE":
+		{
+		ctx.Bot().SendMessage(ctx, tu.Message(
+		tu.ID(chatID),
+		"Эх, проигрыш. Попробуй еще раз, я покажу на что способен!",))
+		gamesMu.Lock()
+		game.IsActive = false
+		delete(userGames, chatID)
+		game.Mode = "CHILL"
+		gamesMu.Unlock()
+		return nil
+		}
+	case "GUESS":
+		{
 		ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
 			"Я рад, что смог тебе помочь решить wordle! Для новых подсказок используй /help.",
 		))
-
 		gamesMu.Lock()
 		delete(userGames, chatID)
 		game.IsActive = false
 		game.Mode = "CHILL"	
 		gamesMu.Unlock()
+		return nil
+		}
 	}
 
 	lines := strings.Split(input, "\n")
@@ -241,7 +263,7 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 
 	ctx.Bot().SendMessage(ctx, tu.Message(
         tu.ID(chatID),
-        fmt.Sprintf("Моя подсказка: **%s**\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или начни заново с /solve или /help.", Guess),
+        fmt.Sprintf("Моя подсказка: **%s**\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", Guess),
     ))
 
 	return nil
@@ -265,7 +287,7 @@ func handleSolveFeedBack(ctx *th.Context, update telego.Update, game *WordleGame
 		{
 		ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
-		"Эх, проигрыш. Начни заново /solve, я покажу на что способен!",))
+		"Эх, проигрыш. Начни заново , я покажу на что способен!",))
 		gamesMu.Lock()
 		game.IsActive = false
 		delete(userGames, chatID)
@@ -277,7 +299,7 @@ func handleSolveFeedBack(ctx *th.Context, update telego.Update, game *WordleGame
 		{
 		ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
-		"🎉 Ура! Я молодец. Используй /solve для новой игры.",))
+		"🎉 Ура! Я молодец. Используй команды для новой игры.",))
 		gamesMu.Lock()
 		game.IsActive = false
 		delete(userGames, chatID)
@@ -320,11 +342,27 @@ func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Co
 	game.PossibleWords = filtered
 	game.LastGuess = nextGuess
 	gamesMu.Unlock()
+	gamesMu.RLock()
+	mode := game.Mode
+	gamesMu.RUnlock()
 
-	ctx.Bot().SendMessage(ctx, tu.Message(
+	switch mode {
+	case "SOLVE":
+		{
+		ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
 		fmt.Sprintf("Моя следующая догадка: **%s**", nextGuess),
 	))
+	}
+	case "HELP":
+	{
+		ctx.Bot().SendMessage(ctx, tu.Message(
+        tu.ID(chatID),
+        fmt.Sprintf("Моя подсказка: **%s**\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", nextGuess),
+    ))
+	}
+	}
+	
 }
 
 func getOptimalFirstWord() string {
