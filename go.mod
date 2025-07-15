@@ -1,4 +1,4 @@
-module TelegramBotGo
+module github.com/Fr11zy/WordleBot
 
 go 1.24.1
 
