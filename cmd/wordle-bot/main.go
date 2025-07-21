@@ -28,7 +28,7 @@ type WordleGame struct {
 var (
 	gamesMu   sync.RWMutex
 	userGames = make(map[int64]*WordleGame)
-	wordlist  = loadWordList("wordle.txt")
+	wordlist  = loadWordList("assets/wordle.txt")
 )
 
 var optimalFirstWords = []string{
@@ -79,7 +79,6 @@ func main() {
 }
 
 func handleStart(ctx *th.Context, update telego.Update) error {
-	log.Println("handleStart called")
 	chatID := update.Message.Chat.ID
 	_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
