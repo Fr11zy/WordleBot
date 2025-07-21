@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"github.com/joho/godotenv"
 
+	"github.com/joho/godotenv"
 	"github.com/mymmrac/telego"
 	th "github.com/mymmrac/telego/telegohandler"
 	tu "github.com/mymmrac/telego/telegoutil"
@@ -21,8 +21,8 @@ type WordleGame struct {
 	PossibleWords []string
 	LastGuess     string
 	IsActive      bool
-	Mode 		  string
-	Attempts 	  int
+	Mode          string
+	Attempts      int
 }
 
 var (
@@ -37,40 +37,58 @@ var optimalFirstWords = []string{
 }
 
 func main() {
-    rand.Seed(time.Now().UnixNano())
+	rand.Seed(time.Now().UnixNano())
 
 	ctx := context.Background()
-	_ = godotenv.Load()
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Failed to load .env file: %v", err)
+	}
 	botToken := os.Getenv("TOKEN")
+	if botToken == "" {
+		log.Fatalf("%v", err)
+	}
 
 	bot, err := telego.NewBot(botToken, telego.WithDefaultDebugLogger())
 	if err != nil {
 		log.Fatalf("Ошибка создания бота: %v", err)
 	}
 
-	updates, _ := bot.UpdatesViaLongPolling(ctx, nil)
-	bh, _ := th.NewBotHandler(bot, updates)
-	defer func() { _ = bh.Stop() }()
+	updates, err := bot.UpdatesViaLongPolling(ctx, nil)
+	if err != nil {
+		log.Fatalf("Failed to start long polling: %v", err)
+	}
+	bh, err := th.NewBotHandler(bot, updates)
+	if err != nil {
+		log.Fatalf("Failed to create bot handler: %v", err)
+	}
+	defer func() { 
+		if err := bh.Stop(); err != nil {
+			log.Printf("Failed to stop bot handler: %v", err)
+		}
+	}()
 
 	bh.Handle(handleSolve, th.CommandEqual("solve"))
 	bh.Handle(handleStart, th.CommandEqual("start"))
 	bh.Handle(handleHelp, th.CommandEqual("help"))
 	bh.Handle(handleFeedBack)
-	
-	_ = bh.Start()
+
+	if err := bh.Start(); err != nil {
+		log.Fatalf("Failed to start bot handler: %v", err)
+	}
 }
 
 func handleStart(ctx *th.Context, update telego.Update) error {
 	log.Println("handleStart called")
 	chatID := update.Message.Chat.ID
-	ctx.Bot().SendMessage(ctx, tu.Message(
+	_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
 		fmt.Sprint("Привет, я твой помощник в решении ежедевных Wordle от New York Times, и не только.\n"+
-		"Я буду давать тебе новые слова, анализируя твой фидбэк от прошлого слова.\n"+
-		"Чтобы начать решение Wordle, используй команду /solve.\n"+
-		"Также ты можешь попросить у меня подсказку, если при самостоятельном решении Wordle где-то застрял - используй команду /help."),
+			"Я буду давать тебе новые слова, анализируя твой фидбэк от прошлого слова.\n"+
+			"Чтобы начать решение Wordle, используй команду /solve.\n"+
+			"Также ты можешь попросить у меня подсказку, если при самостоятельном решении Wordle где-то застрял - используй команду /help."),
 	))
-	return nil
+	return err
 }
 
 func handleHelp(ctx *th.Context, update telego.Update) error {
@@ -79,18 +97,18 @@ func handleHelp(ctx *th.Context, update telego.Update) error {
 	userGames[chatID] = &WordleGame{
 		PossibleWords: wordlist,
 		IsActive:      true,
-		Mode:		   "HELP",
-		Attempts: 	   0,	
+		Mode:          "HELP",
+		Attempts:      0,
 	}
 	gamesMu.Unlock()
-	ctx.Bot().SendMessage(ctx, tu.Message(
+	_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
 		fmt.Sprint("Тебе нужна подсказка? - Отлично. Отправь мне все известные слова и их статусы через пробел: `TRAIN` `bygbb` (каждая пара в отдельной строчке):\n"+
-		"🟩 (G) — буква на месте\n"+
-		"🟨 (Y) — буква есть, но не тут\n"+
-		"⬛️ (B) — буквы нет в слове\n\n"),
+			"🟩 (G) — буква на месте\n"+
+			"🟨 (Y) — буква есть, но не тут\n"+
+			"⬛️ (B) — буквы нет в слове\n\n"),
 	))
-	return nil
+	return err
 }
 
 func handleSolve(ctx *th.Context, update telego.Update) error {
@@ -100,18 +118,18 @@ func handleSolve(ctx *th.Context, update telego.Update) error {
 	userGames[chatID] = &WordleGame{
 		PossibleWords: wordlist,
 		IsActive:      true,
-		Mode:		   "SOLVE",
-		Attempts: 	   1,	
+		Mode:          "SOLVE",
+		Attempts:      1,
 	}
 	gamesMu.Unlock()
 
 	firstGuess := getOptimalFirstWord()
-	
+
 	gamesMu.Lock()
 	userGames[chatID].LastGuess = firstGuess
 	gamesMu.Unlock()
 
-	ctx.Bot().SendMessage(ctx, tu.Message(
+	_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 		tu.ID(chatID),
 		fmt.Sprintf("Начинаем Wordle! Мой первый вариант: **%s**\n\n"+
 			"Отправляй мне фидбэк по моим вариантам в формате `GYBBG`:\n"+
@@ -123,7 +141,7 @@ func handleSolve(ctx *th.Context, update telego.Update) error {
 			"При проигрыше напиши `Lose`.",
 			firstGuess),
 	))
-	return nil
+	return err
 }
 
 func handleFeedBack(ctx *th.Context, update telego.Update) error {
@@ -137,11 +155,11 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 	gamesMu.RUnlock()
 
 	if !exists || !game.IsActive {
-		ctx.Bot().SendMessage(ctx, tu.Message(
+		_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
 			"Игра не активна. Используй /solve или /help для старта.",
 		))
-		return nil
+		return err
 	}
 
 	switch game.Mode {
@@ -149,16 +167,16 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 		return handleSolveFeedBack(ctx, update, game)
 	case "HELP":
 		return handleHelpFeedBack(ctx, update, game)
-	case "CHILL": 
+	case "CHILL":
 		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-			tu.ID(chatID),
-			fmt.Sprint("На данный момент я в состоянии отдыха, потому что не выполняю никаких задач.\n"+
-			"Попробуй использовать команды start, solve или help."),
-		))
+			_, err := ctx.Bot().SendMessage(ctx, tu.Message(
+				tu.ID(chatID),
+				fmt.Sprint("На данный момент я в состоянии отдыха, потому что не выполняю никаких задач.\n"+
+					"Попробуй использовать команды start, solve или help."),
+			))
+			return err
 		}
 	}
-
 	return nil
 }
 
@@ -172,46 +190,46 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 	}
 
 	lines := strings.Split(input, "\n")
-	
+
 	gamesMu.Lock()
 	game.Attempts += len(lines)
 	gamesMu.Unlock()
 
 	if len(lines) == 0 {
-		ctx.Bot().SendMessage(ctx, tu.Message(
+		_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
 			"Пожалуйста, отправь слова и их статусы в формате `TRAIN-bygbb`, по одному на строку.",
 		))
-		return nil
+		return err
 	}
 	var validInputs [][]string
-	for _,line := range lines {
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		parts := strings.Split(line, " ")
 		if len(parts) != 2 || len(parts[0]) != 5 || len(parts[1]) != 5 {
-			ctx.Bot().SendMessage(ctx, tu.Message(
-                tu.ID(chatID),
-                fmt.Sprintf("Неверный формат строки: `%s`. Используй формат `TRAIN bygbb`.", line),
-            ))
-            return nil
+			_, err := ctx.Bot().SendMessage(ctx, tu.Message(
+				tu.ID(chatID),
+				fmt.Sprintf("Неверный формат строки: `%s`. Используй формат `TRAIN bygbb`.", line),
+			))
+			return err
 		}
-		
+
 		word := parts[0]
 		feedback := parts[1]
 
 		if !isValidWord(word) || !isValidFeedBack(feedback) {
-			ctx.Bot().SendMessage(ctx, tu.Message(
+			_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 				tu.ID(chatID),
 				fmt.Sprintf("Неверное слово или фидбэк: `%s-%s`. Слово должно быть 5 букв, фидбэк — gybbg.", word, feedback),
 			))
-			return nil
+			return err
 		}
 		validInputs = append(validInputs, []string{word, feedback})
 	}
-	
+
 	filtered := game.PossibleWords
 	for _, input := range validInputs {
 		word, feedback := input[0], input[1]
@@ -219,10 +237,13 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 	}
 
 	if len(filtered) == 0 {
-		ctx.Bot().SendMessage(ctx, tu.Message(
+		_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
-			"Ошибка: нет подходящих слов на основе твоего ввода. Проверь данные или начни заново с /help.",
+			"Ошибка: нет подходящих слов на основе твоего ввода. Проверь данные и начни заново с /help.",
 		))
+		if err != nil {
+			return err
+		}
 		gamesMu.Lock()
 		game.IsActive = false
 		game.Mode = "CHILL"
@@ -243,13 +264,13 @@ func handleHelpFeedBack(ctx *th.Context, update telego.Update, game *WordleGame)
 	attempt := game.Attempts
 	gamesMu.RUnlock()
 
-	ctx.Bot().SendMessage(ctx, tu.Message(
-        tu.ID(chatID),
-        fmt.Sprintf("Моя подсказка: **%s**(количество оставшихся попыток для победы: %d)\n\n"+
-		"Отправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", Guess, 5-attempt),
-    ))
-
-	return nil
+	_, err := ctx.Bot().SendMessage(ctx, tu.Message(
+		tu.ID(chatID),
+		fmt.Sprintf("Моя подсказка: **%s**(количество оставшихся попыток для победы: %d)\n\n"+
+			"Отправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", Guess, 5-attempt),
+	))
+	
+	return err
 }
 
 func handleSolveFeedBack(ctx *th.Context, update telego.Update, game *WordleGame) error {
@@ -263,11 +284,11 @@ func handleSolveFeedBack(ctx *th.Context, update telego.Update, game *WordleGame
 	}
 
 	if !isValidFeedBack(feedback) {
-		ctx.Bot().SendMessage(ctx, tu.Message(
+		_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
 			"Неверный формат. Используй GYBBG (например, GYBBG) или Guess.",
 		))
-		return nil
+		return err
 	}
 
 	filtered := filterWords(game.PossibleWords, game.LastGuess, feedback)
@@ -277,18 +298,21 @@ func handleSolveFeedBack(ctx *th.Context, update telego.Update, game *WordleGame
 
 func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Context) {
 	if len(filtered) == 0 {
-		ctx.Bot().SendMessage(ctx, tu.Message(
+		_, err := ctx.Bot().SendMessage(ctx, tu.Message(
 			tu.ID(chatID),
 			"Ошибка: нет подходящих слов. Начни заново /solve.",
 		))
+		if err != nil {
+			log.Printf("Failed to send no matching words message for chat %d: %v", chatID, err)
+		}
 		gamesMu.Lock()
 		game.IsActive = false
 		game.Mode = "CHILL"
 		game.Attempts = 0
+		delete(userGames, chatID)
 		gamesMu.Unlock()
 		return
 	}
-
 
 	nextGuess := chooseNext(filtered)
 
@@ -297,67 +321,69 @@ func giveNextGuess(filtered []string, chatID int64, game *WordleGame, ctx *th.Co
 	game.LastGuess = nextGuess
 	game.Attempts += 1
 	gamesMu.Unlock()
+
 	gamesMu.RLock()
 	mode := game.Mode
 	attempt := game.Attempts
 	gamesMu.RUnlock()
 
+	var message string
 	switch mode {
 	case "SOLVE":
-		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-		tu.ID(chatID),
-		fmt.Sprintf("Моя %d-ая догадка: **%s**", attempt, nextGuess),
-	))
-	}
+		message = fmt.Sprintf("Моя %d-ая догадка: **%s**", attempt, nextGuess)
 	case "HELP":
-	{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-        tu.ID(chatID),
-        fmt.Sprintf("Моя подсказка: **%s**(количество оставшихся попыток для победы: %d)\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", nextGuess, 5-attempt),
-    ))
+		message = fmt.Sprintf("Моя подсказка: **%s**(количество оставшихся попыток для победы: %d)\n\nОтправь новый фидбэк в формате `TRAIN bygbb` или guess, если я угадал.", nextGuess, 5-attempt)
 	}
+
+	_, err := ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(chatID), message))
+	if err != nil {
+		log.Printf("Failed to send nect guess message for chat %d: %v", chatID, err)
 	}
-	
 }
 
-func handleSpecialFeedback(ctx *th.Context, game* WordleGame, chatID int64, feedback string) bool {
+func handleSpecialFeedback(ctx *th.Context, game *WordleGame, chatID int64, feedback string) bool {
 	switch feedback {
 	case "NOTFOUND":
 		{
-		gamesMu.Lock()
-		game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
-		game.Attempts -= 1
-		gamesMu.Unlock()
-		giveNextGuess(game.PossibleWords, chatID, game, ctx)
-		return true
+			gamesMu.Lock()
+			game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
+			game.Attempts -= 1
+			gamesMu.Unlock()
+			giveNextGuess(game.PossibleWords, chatID, game, ctx)
+			return true
 		}
 	case "LOSE":
 		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-		tu.ID(chatID),
-		"Эх, проигрыш. Попробуй еще раз, я покажу на что способен!",))
-		gamesMu.Lock()
-		game.IsActive = false
-		game.Mode = "CHILL"
-		game.Attempts = 0
-		delete(userGames, chatID)
-		gamesMu.Unlock()
-		return true
+			_, err := ctx.Bot().SendMessage(ctx, tu.Message(
+				tu.ID(chatID),
+				"Эх, проигрыш. Попробуй еще раз, я покажу на что способен!"))
+			if err != nil {
+				log.Printf("Failed to send lose message for chat %d: %v", chatID, err)
+			}
+			gamesMu.Lock()
+			game.IsActive = false
+			game.Mode = "CHILL"
+			game.Attempts = 0
+			delete(userGames, chatID)
+			gamesMu.Unlock()
+			return true
 		}
 	case "GUESS":
 		{
-		ctx.Bot().SendMessage(ctx, tu.Message(
-			tu.ID(chatID),
-			"Я рад, что смог тебе помочь решить wordle!",
-		))
-		gamesMu.Lock()
-		game.IsActive = false
-		game.Mode = "CHILL"
-		game.Attempts = 0
-		delete(userGames, chatID)	
-		gamesMu.Unlock()
-		return true
+			_, err := ctx.Bot().SendMessage(ctx, tu.Message(
+				tu.ID(chatID),
+				"Я рад, что смог тебе помочь решить wordle!",
+			))
+			if err != nil {
+				log.Printf("Failed to send guess success message for chat %d: %v", chatID, err)
+			}
+			gamesMu.Lock()
+			game.IsActive = false
+			game.Mode = "CHILL"
+			game.Attempts = 0
+			delete(userGames, chatID)
+			gamesMu.Unlock()
+			return true
 		}
 	}
 	return false
@@ -368,15 +394,15 @@ func getOptimalFirstWord() string {
 }
 
 func isValidWord(word string) bool {
-    if len(word) != 5 {
-        return false
-    }
-    for _, c := range word {
-        if !('A' <= c && c <= 'Z') {
-            return false
-        }
-    }
-    return true
+	if len(word) != 5 {
+		return false
+	}
+	for _, c := range word {
+		if !('A' <= c && c <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 func isValidFeedBack(feedback string) bool {
@@ -393,7 +419,7 @@ func isValidFeedBack(feedback string) bool {
 
 func filteredOut(words []string, exclude string) []string {
 	filtered := []string{}
-	for _,w := range words {
+	for _, w := range words {
 		if w != exclude {
 			filtered = append(filtered, w)
 		}
@@ -411,7 +437,7 @@ func filterWords(words []string, guess, feedback string) []string {
 				letterCount[guess[i]]++
 			}
 		}
-		
+
 		for i := 0; i < 5; i++ {
 			g := guess[i]
 			w := word[i]
@@ -487,8 +513,11 @@ func loadWordList(filename string) []string {
 	if err != nil {
 		log.Fatalf("Ошибка загрузки словаря: %v", err)
 	}
-	defer file.Close()
-
+	defer func(){
+		if err := file.Close(); err != nil {
+			log.Printf("Failed to close wordlist file %s: %v", filename, err)
+		}
+	}()
 	var words []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -496,7 +525,7 @@ func loadWordList(filename string) []string {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+		log.Printf("Error reading wordlist file %s: %v", filename, err)
 	}
 
 	return words
