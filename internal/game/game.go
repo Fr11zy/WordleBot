@@ -71,7 +71,9 @@ func UpdateGameState(chatID int64, words []string, guess string) error {
 	if game, exists := userGames[chatID]; exists {
 		game.PossibleWords = words
 		game.LastGuess = guess
-		game.Attempts ++
+		if game.Mode != "HELP"{
+			game.Attempts ++
+		}
 		return nil
 	}
 	return ErrGameNotFound

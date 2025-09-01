@@ -99,15 +99,6 @@ func handleFeedBack(ctx *th.Context, update telego.Update) error {
 		return handleSolveFeedBack(ctx, chatID, input)
 	case "HELP":
 		return handleHelpFeedBack(ctx, chatID, input)
-	case "CHILL":
-		{
-			_, err := ctx.Bot().SendMessage(ctx, tu.Message(
-				tu.ID(chatID),
-				fmt.Sprint("На данный момент я в состоянии отдыха, потому что не выполняю никаких задач.\n"+
-					"Попробуй использовать команды start, solve или help."),
-			))
-			return err
-		}
 	}
 	return nil
 }
@@ -134,7 +125,7 @@ func handleHelpFeedBack(ctx *th.Context, chatID int64, input string) error {
 		))
 		return err
 	}
-	
+
 	var validInputs [][]string
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
