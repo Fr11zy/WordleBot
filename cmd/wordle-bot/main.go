@@ -10,6 +10,7 @@ import (
 	"github.com/Fr11zy/WordleBot/internal/bot"
 )
 
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
