@@ -1,6 +1,7 @@
 APP := wordle-bot
 MAIN := ./cmd/wordle-bot
 OUT := bin
+BIN := $(OUT)/$(APP)
 
 .PHONY: build run start
 
@@ -12,5 +13,10 @@ run:
 	go run $(MAIN)
 
 start:
-	./$(OUT)/$(APP)
+	@if [ -f "$(BIN)" ]; then \
+		$(BIN); \
+	else \
+		echo "❌ Бинарь не найден! Сначала собери его: make build"; \
+		exit 1; \
+	fi
 
