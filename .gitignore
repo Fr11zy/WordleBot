@@ -6,6 +6,7 @@ vendor/
 pkg/
 *.test
 
+bin/
 .vscode/
 .idea/
 
