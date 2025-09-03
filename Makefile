@@ -3,7 +3,13 @@ MAIN := ./cmd/wordle-bot
 OUT := bin
 BIN := $(OUT)/$(APP)
 
-.PHONY: build run start
+.PHONY: build run start up down
+
+up:
+	docker-compose up --build -d && docker-compose logs -f
+
+down:
+	docker-compose down --remove-orphans
 
 build:
 	@mkdir -p $(OUT)
