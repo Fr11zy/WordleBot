@@ -17,9 +17,9 @@ func Load() (Config, error) {
 		}
 	}
 	
-	token := os.Getenv("TOKEN")
+	token := os.Getenv("TG_TOKEN")
 	if token == "" {
-		return Config{}, errors.New("TOKEN environment variable is required")
+		return Config{}, errors.New("TG_TOKEN environment variable is required")
 	}
 
 	return Config{BotToken: token}, nil
