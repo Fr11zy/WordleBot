@@ -9,4 +9,4 @@ services:
       - .env          
     volumes:
       - ./assets:/app/assets:ro
-    restart: unless-stopped
+    restart: always
