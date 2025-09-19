@@ -2,6 +2,7 @@ package game
 
 import (
 	"sync"
+	"math/rand"
 )
 
 type WordleGame struct {
@@ -12,9 +13,16 @@ type WordleGame struct {
 	Attempts      int
 }
 
+type PlayWordleGame struct {
+	HiddenWord 		string
+	LettersFlags    []string
+	WordGame 		*WordleGame
+}
+
 var (
 	gamesMu   sync.RWMutex
 	userGames = make(map[int64]*WordleGame)
+	userPlayGames = make(map[int64]*PlayWordleGame)
 )
 
 var optimalFirstWords = []string{
@@ -30,12 +38,29 @@ func StartGame(chatID int64, mode string) error {
 	if len(wordlist) == 0 {
 		return ErrEmptyWordList
 	}
-
+	
 	attempts := 0
 	if mode == "SOLVE" {
 		attempts = 1
 	}
-
+	var letters []string
+	for char := 'A'; char <= 'Z'; char++ {
+    letters = append(letters, string(char))
+}
+	if mode == "PLAY" {
+		hidden := wordlist[rand.Intn(14849)]
+		userPlayGames[chatID] = &PlayWordleGame{
+			HiddenWord : hidden,
+			LettersFlags: letters,
+			WordGame: &WordleGame{
+				PossibleWords: wordlist,
+				IsActive: true,
+				Mode: mode,
+				Attempts: attempts,
+			},
+		}
+		return nil
+	}
 	userGames[chatID] = &WordleGame{
 		PossibleWords: wordlist,
 		IsActive: true,
@@ -45,38 +70,28 @@ func StartGame(chatID int64, mode string) error {
 	return nil
 }
 
-func IncrementAttempts(chatID int64, count int) error {
-	gamesMu.RLock()
-	defer gamesMu.RUnlock()
-	if game, exists := userGames[chatID]; exists {
-		game.Attempts += count
-		return nil
-	}
-	return ErrGameNotFound
+func (pg *PlayWordleGame) GetHiddenWord() string {
+	return pg.HiddenWord
 }
 
-func UpdateLastGuess(chatID int64, guess string) error {
-	gamesMu.RLock()
-	defer gamesMu.RUnlock()
-	if game, exists := userGames[chatID]; exists {
-		game.LastGuess = guess
-		return nil
-	}
-	return ErrGameNotFound
+func (pg *PlayWordleGame) GetLettersFlags() []string {
+	return pg.LettersFlags
 }
 
-func UpdateGameState(chatID int64, words []string, guess string) error {
-	gamesMu.RLock()
-	defer gamesMu.RUnlock()
-	if game, exists := userGames[chatID]; exists {
-		game.PossibleWords = words
-		game.LastGuess = guess
-		if game.Mode != "HELP"{
-			game.Attempts ++
-		}
-		return nil
+func (wg *WordleGame) IncrementAttempts(count int) {
+	wg.Attempts += count
+}
+
+func (wg *WordleGame) UpdateLastGuess(guess string) {
+	wg.LastGuess = guess
+}
+
+func (wg *WordleGame) UpdateGameState(words []string, guess string) {
+	wg.PossibleWords = words
+	wg.LastGuess = guess
+	if wg.Mode != "HELP" {
+		wg.Attempts++
 	}
-	return ErrGameNotFound
 }
 
 func EndGame(chatID int64) error {
@@ -86,74 +101,58 @@ func EndGame(chatID int64) error {
 		delete(userGames, chatID)
 		return nil
 	}
+	if _, exists := userPlayGames[chatID]; exists {
+		delete(userPlayGames, chatID)
+		return nil
+	}
 	return ErrGameNotFound
 }
 
-func GetGame(chatID int64) (*WordleGame, bool) {
+func GetWGame(chatID int64) (*WordleGame, bool) {
 	gamesMu.RLock()
 	defer gamesMu.RUnlock()
 	game, exists := userGames[chatID]
 	return game, exists
 }
 
-func GetPossibleWords(chatID int64) []string {
+func GetPGame(chatID int64) (*PlayWordleGame, bool) {
 	gamesMu.RLock()
 	defer gamesMu.RUnlock()
-	if game, exists := userGames[chatID]; exists {
-		return game.PossibleWords
-	}
-	return nil
+	game, exists := userPlayGames[chatID]
+	return game, exists
+  }
+
+func (wg *WordleGame)GetPossibleWords() []string {
+	return wg.PossibleWords
 }
 
-func GetMode(chatID int64) (string, error) {
-	gamesMu.RLock()
-	defer gamesMu.RUnlock()
-	if game, exists := userGames[chatID]; exists {
-		return game.Mode, nil
-	}
-	return "", ErrGameNotFound
+func (wg *WordleGame) GetMode() string {
+	return wg.Mode
 }
 
-func GetAttempts(chatID int64) (int, error) {
-	gamesMu.RLock()
-	defer gamesMu.RUnlock()
-	if game, exists := userGames[chatID]; exists {
-		return game.Attempts, nil
-	}
-	return 0, ErrGameNotFound
+func (wg *WordleGame) GetAttempts() int {
+	return wg.Attempts
 }
 
-func FilteredOutLastGuess(chatID int64) error {
-	gamesMu.Lock()
-	defer gamesMu.Unlock()
-	if game, exists := userGames[chatID]; exists {
-		game.PossibleWords = filteredOut(game.PossibleWords, game.LastGuess)
-		game.Attempts --
-		return nil
-	}
-	return ErrGameNotFound
+func (wg *WordleGame) GetState() bool {
+	return wg.IsActive
 }
 
-func FilterSingleWord(chatID int64, feedback string) ([]string, error) {
-	gamesMu.Lock()
-	defer gamesMu.Unlock()
-	if game, exists := userGames[chatID]; exists {
-		return filterWords(game.PossibleWords, game.LastGuess ,feedback), nil
-	}
-	return nil, ErrGameNotFound
+func (wg *WordleGame) FilteredOutLastGuess() {
+	wg.PossibleWords = filteredOut(wg.PossibleWords, wg.LastGuess)
+	wg.Attempts--
 }
 
-func FilterWords(chatID int64, inputs [][]string) ([]string, error) {
-	gamesMu.Lock()
-	defer gamesMu.Unlock()
-	if game, exists := userGames[chatID]; exists {
-		filtered := game.PossibleWords
-		for _, input := range inputs {
-			word, feedback := input[0], input[1]
-			filtered = filterWords(filtered, word, feedback)
-		}
-		return filtered, nil
+func (wg *WordleGame) FilterSingleWord(feedback string) []string {
+	return filterWords(wg.PossibleWords, wg.LastGuess ,feedback)
+}
+
+func (wg *WordleGame) FilterWords(inputs [][]string) []string {
+	filtered := wg.PossibleWords
+	for _, input := range inputs {
+		word, feedback := input[0], input[1]
+		filtered = filterWords(filtered, word, feedback)
 	}
-	return nil, ErrGameNotFound
+	return filtered
 }
 
