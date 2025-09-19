@@ -38,6 +38,7 @@ func (b* Bot) Run(ctx context.Context) error {
 	b.handler.Handle(handleSolve, th.CommandEqual("solve"))
 	b.handler.Handle(handleStart, th.CommandEqual("start"))
 	b.handler.Handle(handleHelp, th.CommandEqual("help"))
+	b.handler.Handle(handlePLay, th.CommandEqual("play"))
 	b.handler.Handle(handleFeedBack)
 
 	defer func() { 
